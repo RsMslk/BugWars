@@ -5,7 +5,17 @@
 #include "Bullet.h"
 #include "Bug.h"
 
+#include<limits>
 IMPLEMENT_RTTI(Tank);
+
+const float eps = 1e3;
+
+Tank::Tank()
+{
+	disabled = false;
+	angle = 0;
+}
+
 
 void Tank::OnUpdate(float dt)
 {
@@ -13,14 +23,94 @@ void Tank::OnUpdate(float dt)
 
 BugBase* Tank::GetBugToShoot() const
 {
+	Bug* bug = nullptr;
+	float min_dist = std::numeric_limits<float>::infinity();
 	for (auto obj : g_Game->objects)
-		if (auto bug = dynamic_cast<Bug*>(obj))
-			return bug;
-
-	return nullptr;
+		if (obj->GetRTTI() == Bug::s_RTTI && !obj->disabled)
+		{
+			auto dist = position.Distance2(obj->position);
+			if (dist < min_dist)
+			{
+				bug = static_cast<Bug*>(obj);
+				min_dist = dist;
+			}
+		}
+	return bug;
 }
+
+float sqr(float x)
+{
+	return x * x;
+}
+
+
 
 Point Tank::CalcShootDirection(Point target_pos, Point target_dir, float target_vel, float bullet_vel) const
 {
-	return { 1, 0 };
+	auto d = target_pos.Distance(position);
+
+	if (d < 1e-4)
+	{
+		return { 1, 0 };
+	}
+
+	auto default_dir = (target_pos - position).Normalized();
+
+	auto dx = target_pos.x - position.x;
+	auto dy = target_pos.y - position.y;
+	auto vx = target_vel * target_dir.x;
+	auto vy = target_vel * target_dir.y;
+
+	auto D_ = dx * dx * (bullet_vel * d - (dy * vx - dx * vy)) * (bullet_vel * d + (dy * vx - dx * vy));
+
+	if (D_ < 0)
+	{
+		return default_dir;
+	}
+
+	auto sqrt_D_ = sqrt(D_);
+
+	auto get_dir_time = [d, dx, dy, vx, vy, bullet_vel](float sqrt_D_) -> std::optional<std::pair<Point, float>> {
+		auto vel_x = (dy * dy * vx - dx * dy * vy + sqrt_D_) / (d * d);
+
+		auto t = dx / (vel_x - vx);
+
+		if (t < 0)
+		{
+			return {};
+		}
+
+		auto vel_y_2 = bullet_vel * bullet_vel - vel_x * vel_x;
+
+		if (vel_y_2 < 0)
+		{
+			return {};
+		}
+
+		auto vel_y = sqrt(vel_y_2);
+
+		if (abs(t * (vel_y - vy) - dy) > 1e-4)
+		{
+			vel_y = -vel_y;
+		}
+
+		return { {Point{vel_x, vel_y}.Normalized(), t} };
+	};
+
+	auto ans1 = get_dir_time(sqrt_D_);
+	auto ans2 = get_dir_time(-sqrt_D_);
+
+	if (!ans1)
+	{
+		return ans2 ? ans2->first : default_dir;
+	}
+	if (!ans2)
+	{
+		return ans1 ? ans1->first : default_dir;
+	}
+
+	auto [dir1, t1] = *ans1;
+	auto [dir2, t2] = *ans2;
+
+	return t1 < t2 ? dir1 : dir2;
 }

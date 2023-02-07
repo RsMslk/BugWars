@@ -5,7 +5,11 @@
 #include "Tank.h"
 
 IMPLEMENT_RTTI(Bullet);
-
+Bullet::Bullet()
+{
+	disabled = false;
+	angle = 0;
+}
 void Bullet::OnStart(Point)
 {
 }
@@ -14,7 +18,8 @@ void Bullet::OnUpdate(float dt)
 {
 	for (auto object : g_Game->objects)
 		if (!object->disabled)
-			if (auto bug = dynamic_cast<Bug*>(object))
+			if (object->GetRTTI() == Bug::s_RTTI) {
+				auto bug = static_cast<Bug*>(object);
 				if (bug->position.Distance(position) < bug->GetRadius())
 				{
 					g_Game->tank->score++;
@@ -24,6 +29,7 @@ void Bullet::OnUpdate(float dt)
 					visible = false;
 					return;
 				}
+			}
 }
 
 void Bullet::OnLifeEnd()
